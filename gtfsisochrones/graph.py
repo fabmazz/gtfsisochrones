@@ -8,6 +8,9 @@ import rustworkx as rx
 import polars as pl
 import pandas as pd
 
+
+node_name_stop = lambda x: f"s{x}"
+
 ## build the graph using rustworkx
 def build_graph_rx(nodes_df,edgelist):
     nrx = rx.PyGraph()
@@ -95,9 +98,10 @@ def update_timedist_all(timedist, nrx, i_net,start_time_secs,nnodes,speed_foot_k
     return change #dists*3.6/speed_foot
 
 @nb.njit()
-def update_timediff_with_dist(timedist, dist_vec,start_time_secs,nnodes,speed_foot_kmh):
+def update_timediff_with_dist(timedist,nvehtotal, dist_vec,start_time_secs, start_nveh, nnodes,speed_foot_kmh):
 
     change = np.zeros(nnodes,dtype=np.bool_)#[0]
+    totupd = 0
     #_check_dist(timedist, dist_rr, start_time, change, nnodes,speed_foot)
     for i in range(nnodes):
         d=dist_vec[i] #if i in dist_rr else 0.0
@@ -105,8 +109,10 @@ def update_timediff_with_dist(timedist, dist_vec,start_time_secs,nnodes,speed_fo
         if ntime < timedist[i]:
             timedist[i] = ntime
             change[i] = True
+            nvehtotal[i] = start_nveh
+            totupd +=1
     
-    return change #dists*3.6/speed_foot
+    return change, totupd #dists*3.6/speed_foot
 
 
 def trips_from_stop_time(stoptimes, tstart_stop, final_time, stopid):

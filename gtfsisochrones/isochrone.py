@@ -57,6 +57,7 @@ def run_isochrone_algo(START_POINT, START_TIME, MAX_TIME_dt, nrx, kdtree, stopti
     gid_for_stop = dict(zip(*stop_id_gid))
     distances_graph_sid = data["distances_g"]
     dist_idx_sid = data["distances_idx_sid"]
+    max_trips = data["max_num_trips"] if "max_num_trips" in data else 10
     #distidx_by_sid = 
     get_dist_stop = lambda x: distances_graph_sid[dist_idx_sid[x]]
 
@@ -69,6 +70,7 @@ def run_isochrone_algo(START_POINT, START_TIME, MAX_TIME_dt, nrx, kdtree, stopti
 
     tottimetaken = np.full(NNODES,np.inf)
     tottimetaken[istart] = 0.
+    totvehstaken = np.zeros(NNODES,dtype=np.int32)
 
     updated=graph.update_timedist_all(tottimetaken, nrx, istart, 0, NNODES, SPEED_FOOT_KMH,)
     stops_dists=find_stops_reachable_distance(tottimetaken, MAX_TIME_s, stop_id_gid )
@@ -78,6 +80,7 @@ def run_isochrone_algo(START_POINT, START_TIME, MAX_TIME_dt, nrx, kdtree, stopti
     final_t = START_TIME+MAX_TIME_dt
     #diff10sec = timedelta(seconds=10)
     i=0
+    limited_stops=[]
 
     #for stid,nid in zip(*stops_reachable):
     """
@@ -92,7 +95,13 @@ def run_isochrone_algo(START_POINT, START_TIME, MAX_TIME_dt, nrx, kdtree, stopti
             continue
         gid = gid_for_stop[sid]
         deltat_s=tottimetaken[gid]
+        nvehs = totvehstaken[gid]
+        
         if deltat_s > MAX_TIME_s:
+            continue
+
+        if nvehs >= max_trips:
+            limited_stops.append((sid,nvehs,"hightrips"))
             continue
         delay_s = DELAY_METRO if stops_metro[sid] else DELAY_STOPS
         
@@ -101,11 +110,13 @@ def run_isochrone_algo(START_POINT, START_TIME, MAX_TIME_dt, nrx, kdtree, stopti
         tstop=add_time(START_TIME, deltat_s+delay_s)
         if stops_metro[sid] and verbose:
             print(f"METRO: {sid} {tstop}")
-        #print(tstop, tstop.total_seconds(), stid)
+        
+        #find trips from this stop
         tripsdf = graph.trips_from_stop_time(stoptimes_today, tstop,final_t, sid)
 
         dfss = []
         for trid, seq in zip(tripsdf["trip_id"],tripsdf["stop_sequence"]):
+            ## find arrival times at other stops
             df1=stoptimes_today.lazy().filter((pl.col("trip_id")==trid) & (pl.col("stop_sequence")> seq)).select(["arrival_time","stop_id"]).collect()
             #ss= dict(zip(df1.stop_id,df1.arrival_time)
             dfss.append(df1)
@@ -117,7 +128,11 @@ def run_isochrone_algo(START_POINT, START_TIME, MAX_TIME_dt, nrx, kdtree, stopti
         #print(f"Starting at time {str(tstop)}, stop {sid} {deltat_s}")
 
         for sid_new, arr_time in stops_arr.iter_rows():
-            #gid_new = gid_for_stop[sid_new]
+            ## now have new stop -> added another trip
+            gid_new = gid_for_stop[sid_new]
+            # put there that we have gotten out of the bus
+            #totvehstaken[gid_new] = nvehs+1
+            new_nvehs = nvehs+1
             
             diff_ts = GtfsTime.from_string(arr_time).diff_second(START_TIME)
             delay_n = DELAY_METRO if stops_metro[sid_new] else DELAY_STOPS
@@ -126,7 +141,11 @@ def run_isochrone_algo(START_POINT, START_TIME, MAX_TIME_dt, nrx, kdtree, stopti
                 continue
             #print(sid_new, gid_new, mti.GtfsTime.from_seconds(diff_ts), diff_ts)
             dist_from_stop=get_dist_stop(sid_new)
-            updated_td = graph.update_timediff_with_dist(tottimetaken,dist_from_stop,diff_ts,NNODES, SPEED_FOOT_KMH)
+            updated_td, nupdated = graph.update_timediff_with_dist(tottimetaken,totvehstaken, dist_from_stop,diff_ts, new_nvehs, NNODES, SPEED_FOOT_KMH)
+            if nupdated == 0:
+                continue
+            ## we have definetely made the trip
+            totvehstaken[gid_new] = new_nvehs
             ## find idcs
             idcs_up= np.where(updated_td)[0]
             ## check which stops ids have been updated
@@ -143,4 +162,4 @@ def run_isochrone_algo(START_POINT, START_TIME, MAX_TIME_dt, nrx, kdtree, stopti
     print("")
     print("DONE")
 
-    return tottimetaken
+    return tottimetaken, totvehstaken, limited_stops
