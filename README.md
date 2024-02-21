@@ -8,7 +8,9 @@ Before running the notebook, you should download the street network graph (`osmn
 Also, download the GTFS data from [aperto.comune.torino.it](http://aperto.comune.torino.it/), and remove the stops (and the corresponding trips) which are not in the area downloaded from OpenStreetMap.
 
 Then, using the notebook you can compute the time taken from a certain point, starting at a specified date and time.
-The last part also shows the isochrones, which are the points reachable within a certain time. Below is an example: 
+
+## Isochrone image generation
+The last part of the notebook also shows the isochrones, which are the points reachable within a certain time. Several isochrones are available in the `images` folder, showing the time taken to reach any point from the Porta Nuova station at different times during the day (20th February 2024). 
 
 ![Isochrone of Torino](images/isochrone_portanuova_2024-01-20_11%3A30%3A00.png)
 
